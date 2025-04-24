@@ -1,61 +1,70 @@
 from mpi4py import MPI
 import time
 import logging
-# Import necessary libraries for web crawling (e.g., requests, beautifulsoup4, scrapy), parsing, etc.
+import requests
+from bs4 import BeautifulSoup
+from urllib.parse import urljoin, urlparse
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - Crawler - %(levelname)s - %(message)s')
 
+# Simple politeness delay in seconds
+CRAWL_DELAY = 2
+
+def extract_links_and_text(html, base_url):
+    soup = BeautifulSoup(html, 'html.parser')
+    text = soup.get_text(separator=' ', strip=True)
+    
+    links = []
+    for tag in soup.find_all('a', href=True):
+        href = tag['href']
+        absolute_url = urljoin(base_url, href)
+        if urlparse(absolute_url).scheme in ["http", "https"]:
+            links.append(absolute_url)
+    
+    return text, links
+
 def crawler_process():
     """
     Process for a crawler node.
-    Fetches web pages, extracts URLs, and sends results back to the master.
+    Fetches web pages, extracts text and URLs, and sends results back to the master.
     """
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
     size = comm.Get_size()
-
     logging.info(f"Crawler node started with rank {rank} of {size}")
 
     while True:
         status = MPI.Status()
-        url_to_crawl = comm.recv(source=0, tag=0, status=status)  # Receive URL from master (tag 0)
+        url_to_crawl = comm.recv(source=0, tag=0, status=status)  # Receive task from master
 
-        if not url_to_crawl:  # Could be a shutdown signal (if you implement one)
+        if not url_to_crawl:  # Optional shutdown signal
             logging.info(f"Crawler {rank} received shutdown signal. Exiting.")
             break
 
         logging.info(f"Crawler {rank} received URL: {url_to_crawl}")
-
         try:
-            # --- Web Crawling Logic ---
-            # 1. Fetch web page content (using requests, scrapy, etc.)
-            # 2. Parse content (using BeautifulSoup4, etc.)
-            # 3. Extract new URLs from the page
-            # 4. Extract relevant text content for indexing (send to indexer later or store temporarily)
+            response = requests.get(url_to_crawl, timeout=10)
+            response.raise_for_status()
 
-            time.sleep(2)  # Simulate crawling delay
+            page_text, extracted_urls = extract_links_and_text(response.text, url_to_crawl)
 
-            extracted_urls = [
-                f"http://example.com/page_from_crawler_{rank}_{i}" for i in range(2)
-            ]  # Example extracted URLs - replace with actual extraction
+            logging.info(f"Crawler {rank} crawled {url_to_crawl}, found {len(extracted_urls)} links.")
 
-            # extracted_content = "Extracted content from " + url_to_crawl  # Example content - replace with actual content extraction
+            result = {
+                "url": url_to_crawl,
+                "text": page_text,
+                "urls": extracted_urls
+            }
 
-            logging.info(f"Crawler {rank} crawled {url_to_crawl}, extracted {len(extracted_urls)} URLs.")
-
-            # --- Send extracted URLs back to master ---
-            comm.send(extracted_urls, dest=0, tag=1)  # Tag 1 for sending extracted URLs
-
-            # --- Optionally send extracted content to indexer node (or queue for indexer) ---
-            # indexer_rank = 1 + (rank - 1) % (size - 2)  # Example: Send to indexer in round-robin (adjust indexer ranks accordingly)
-            # comm.send(extracted_content, dest=indexer_rank, tag=2)  # Tag 2 for sending content to indexer
-
-            comm.send(f"Crawler {rank} - Crawled URL: {url_to_crawl}", dest=0, tag=99)  # Send status update (tag 99)
+            comm.send(result, dest=0, tag=1)  # Send data to master (tag 1 = crawl result)
+            comm.send(f"Crawler {rank} completed: {url_to_crawl}", dest=0, tag=99)  # Heartbeat/status
 
         except Exception as e:
             logging.error(f"Crawler {rank} error crawling {url_to_crawl}: {e}")
-            comm.send(f"Error crawling {url_to_crawl}: {e}", dest=0, tag=999)  # Report error to master (tag 999)
+            comm.send(f"Error crawling {url_to_crawl}: {e}", dest=0, tag=999)  # Error to master
+
+        time.sleep(CRAWL_DELAY)  # Politeness delay
 
 if __name__ == '__main__':
     crawler_process()
