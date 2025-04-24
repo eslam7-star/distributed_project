@@ -102,6 +102,7 @@ def search_keywords(query):
     results = searcher.search(query_obj)
 
     for result in results:
+        logging.info(f"Keyword found: '{query}' in URL: {result['url']}")
         print(f"Found match: {result['url']}")
         print(f"Title: {result['title']}")
         print(f"Content: {result['content']}")
