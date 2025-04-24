@@ -6,7 +6,8 @@ from whoosh.fields import Schema, TEXT, ID
 from whoosh.qparser import QueryParser
 import os
 import shutil
-import argparse
+from bs4 import BeautifulSoup
+import requests
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - Indexer - %(levelname)s - %(message)s')
@@ -19,8 +20,32 @@ def setup_index():
 
     os.mkdir(INDEX_DIR)
 
-    schema = Schema(url=ID(stored=True, unique=True), content=TEXT, keywords=TEXT)
+    # Schema includes title and content
+    schema = Schema(url=ID(stored=True, unique=True), content=TEXT(stored=True), title=TEXT(stored=True))
     return create_in(INDEX_DIR, schema)
+
+def extract_title_and_body(url):
+    """
+    Extract title and body (important headings H1, H2) from the HTML content of a page.
+    """
+    try:
+        response = requests.get(url)
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.content, "html.parser")
+
+            # Extract the title of the page
+            title = soup.title.string if soup.title else ""
+
+            # Extract all important headings (H1, H2) as body
+            body = " ".join([h1.get_text() for h1 in soup.find_all("h1")] + [h2.get_text() for h2 in soup.find_all("h2")])
+
+            return title, body
+        else:
+            logging.warning(f"Failed to retrieve URL: {url}")
+            return "", ""
+    except Exception as e:
+        logging.error(f"Error fetching {url}: {e}")
+        return "", ""
 
 def indexer_process():
     """
@@ -46,11 +71,10 @@ def indexer_process():
 
         try:
             url = content_to_index.get("url", "")
-            text = content_to_index.get("content", "")
-            keywords = content_to_index.get("keywords", "")
+            title, body = extract_title_and_body(url)
 
-            if url and text:
-                writer.add_document(url=url, content=text, keywords=keywords)
+            if url and title and body:
+                writer.add_document(url=url, content=body, title=title)
                 logging.info(f"Indexer {rank} indexed: {url}")
             else:
                 logging.warning(f"Indexer {rank} received incomplete data: {content_to_index}")
@@ -67,31 +91,23 @@ def indexer_process():
 
 def search_keywords(query):
     """
-    Perform a simple keyword search on the index.
+    Perform a simple keyword search on the index (title and content).
     """
     index = open_dir(INDEX_DIR)
     searcher = index.searcher()
 
-    query_parser = QueryParser("keywords", schema=index.schema)
+    query_parser = QueryParser("content", schema=index.schema) 
     query_obj = query_parser.parse(query)
 
     results = searcher.search(query_obj)
 
     for result in results:
         print(f"Found match: {result['url']}")
+        print(f"Title: {result['title']}")
+        print(f"Content: {result['content']}")
+        print()
 
     searcher.close()
 
-def main():
-    parser = argparse.ArgumentParser(description="Indexer and Keyword Search")
-    parser.add_argument('--search', type=str, help='Search for a keyword in the index')
-    args = parser.parse_args()
-
-    if args.search:
-        search_keywords(args.search)
-    else:
-        # Start indexing process if no search argument is provided
-        indexer_process()
-
 if __name__ == '__main__':
-    main()
+    indexer_process()
