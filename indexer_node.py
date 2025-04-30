@@ -1,21 +1,28 @@
 import os
 import logging
+import re
 from google.cloud import pubsub_v1
 from whoosh.index import create_in, open_dir, exists_in
-from whoosh.fields import Schema, ID, TEXT
+from whoosh.fields import Schema, ID, TEXT, STORED
+from whoosh.analysis import StemmingAnalyzer, StandardAnalyzer
+from whoosh.support.charset import accent_map
 
 logging.basicConfig(level=logging.INFO)
 project_id = "pure-karma-387207"
 subscription_name = "index-sub"
 
+
+analyzer = StemmingAnalyzer() | StandardAnalyzer(accent_map=accent_map)
+
 schema = Schema(
     url=ID(stored=True),
-    title=TEXT(stored=True),
-    content=TEXT(stored=True)
+    title=TEXT(stored=True, analyzer=analyzer),
+    content=TEXT(stored=True, analyzer=analyzer),
+    domain=ID(stored=True)
 )
 
 if not os.path.exists("index"):
-    os.mkdir("index")
+    os.makedirs("index")
 if not exists_in("index"):
     create_in("index", schema)
 ix = open_dir("index")
@@ -23,32 +30,42 @@ ix = open_dir("index")
 subscriber = pubsub_v1.SubscriberClient()
 subscription_path = subscriber.subscription_path(project_id, subscription_name)
 
+def preprocess_text(text):
+    text = re.sub(r'<[^>]+>', '', text)  
+    text = re.sub(r'\s+', ' ', text)   
+    return text.strip()
+
 def index_document(url, title, content):
+    from urllib.parse import urlparse
+    domain = urlparse(url).netloc
+    
     writer = ix.writer()
     writer.add_document(
         url=url,
         title=title,
-        content=content
+        content=preprocess_text(content),
+        domain=domain
     )
     writer.commit()
-    logging.info(f"Indexed: {title[:50]}...")
+    logging.info(f"Indexed: {domain} - {title[:50]}...")
 
 def callback(message):
     try:
-        data = message.data.decode('utf-8').split('|')
-        if len(data) == 3:
-            url, title, content = data
-            index_document(url, title, content)
+        url = message.attributes.get('url', '')
+        title = message.attributes.get('title', 'No Title')
+        content = message.data.decode('utf-8')
+        
+        index_document(url, title, content)
         message.ack()
     except Exception as e:
-        logging.error(f"Indexing failed: {e}")
+        logging.error(f"Indexing error: {e}")
         message.nack()
 
 if __name__ == "__main__":
-    logging.info("Indexer node started")
+    logging.info("Indexer service started (Enhanced)")
     streaming_pull = subscriber.subscribe(subscription_path, callback=callback)
     try:
         streaming_pull.result()
     except Exception as e:
-        logging.error(f"Indexer error: {e}")
+        logging.error(f"Service stopped: {e}")
         streaming_pull.cancel()
