@@ -6,31 +6,36 @@ from google.cloud import pubsub_v1
 # Config
 logging.basicConfig(level=logging.INFO)
 project_id = "pure-karma-387207"
-topic_name = "crawl-tasks"
-subscription_name = "crawl-sub"
+topic_crawl = "crawl-tasks"
+topic_index = "index-tasks"
 
 # PubSub Clients
 publisher = pubsub_v1.PublisherClient()
-subscriber = pubsub_v1.SubscriberClient()
-topic_path = publisher.topic_path(project_id, topic_name)
-subscription_path = subscriber.subscription_path(project_id, subscription_name)
+crawl_topic = publisher.topic_path(project_id, topic_crawl)
+index_topic = publisher.topic_path(project_id, topic_index)
 
-def publish_url(url):
-    """Publish URL to crawl-tasks topic"""
-    data = url.encode("utf-8")
-    future = publisher.publish(topic_path, data)
-    logging.info(f"Published URL: {url} (Message ID: {future.result()})")
+def publish_task(topic, data):
+    try:
+        future = publisher.publish(topic, data.encode('utf-8'))
+        return future.result()
+    except Exception as e:
+        logging.error(f"Publish failed: {e}")
+        return None
 
-def distribute_tasks(seed_urls):
-    """Distribute initial crawling tasks"""
-    for url in seed_urls:
-        publish_url(url)
-        time.sleep(1)  # Respect rate limits
-
-if __name__ == "__main__":
+def distribute_tasks():
     seed_urls = [
         "https://example.com",
         "https://google.com",
         "https://wikipedia.org"
     ]
-    distribute_tasks(seed_urls)
+   
+    for url in seed_urls:
+        task_id = publish_task(crawl_topic, url)
+        if task_id:
+            logging.info(f"Published crawl task: {url} (ID: {task_id})")
+        time.sleep(1)  # Politeness delay
+
+if __name__ == "__main__":
+    logging.info("Master node started")
+    distribute_tasks()
+

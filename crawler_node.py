@@ -1,65 +1,84 @@
-import os
 import time
 import logging
 import requests
 from bs4 import BeautifulSoup
+from urllib.robotparser import RobotFileParser
 from google.cloud import pubsub_v1
 
 # Config
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 project_id = "pure-karma-387207"
-topic_name = "crawl-tasks"
-subscription_name = "crawl-sub"
+topic_crawl = "crawl-tasks"
+topic_index = "index-tasks"
 
-# PubSub Client
+# PubSub Clients
+publisher = pubsub_v1.PublisherClient()
 subscriber = pubsub_v1.SubscriberClient()
-subscription_path = subscriber.subscription_path(project_id, subscription_name)
+crawl_subscription = subscriber.subscription_path(project_id, "crawl-sub")
 
-def process_url(url):
-    """Fetch and parse webpage"""
+def check_robots(url):
+    rp = RobotFileParser()
     try:
-        # Respect robots.txt and add delay
-        time.sleep(2)
-        
-        # Fetch page
+        rp.set_url(f"{url}/robots.txt")
+        rp.read()
+        return rp.can_fetch("*", url)
+    except:
+        return True  # Default allow if robots.txt unreachable
+
+def extract_links(url, html):
+    soup = BeautifulSoup(html, 'html.parser')
+    links = []
+    for link in soup.find_all('a'):
+        href = link.get('href')
+        if href and href.startswith('http'):
+            links.append(href)
+    return links
+
+def process_page(url):
+    try:
+        if not check_robots(url):
+            logging.warning(f"Skipping {url} (disallowed by robots.txt)")
+            return None, None, None
+
         headers = {'User-Agent': 'Mozilla/5.0'}
         response = requests.get(url, headers=headers, timeout=10)
         response.raise_for_status()
         
-        # Parse content
         soup = BeautifulSoup(response.text, 'html.parser')
-        
-        # Extract data
         title = soup.title.string if soup.title else "No Title"
-        links = [a['href'] for a in soup.find_all('href') if a.get('href')]
+        content = soup.get_text(separator=' ', strip=True)
+        links = extract_links(url, response.text)
         
-        logging.info(f"Crawled: {url} | Title: {title} | Links: {len(links)}")
-        return links
-        
+        return title, content, links
+    
     except Exception as e:
-        logging.error(f"Failed to crawl {url}: {str(e)}")
-        return []
+        logging.error(f"Error processing {url}: {e}")
+        return None, None, None
 
 def callback(message):
-    """Process incoming Pub/Sub messages"""
     url = message.data.decode('utf-8')
-    logging.info(f"Received URL: {url}")
+    logging.info(f"Processing: {url}")
     
-    links = process_url(url)
-    message.ack()
+    title, content, links = process_page(url)
     
-    # Publish new links (optional)
+    if title and content:
+        # Send to indexer
+        index_data = f"{url}|{title}|{content}"
+        publisher.publish(index_topic, index_data.encode('utf-8'))
+    
     if links:
-        publisher = pubsub_v1.PublisherClient()
         for link in links:
-            publisher.publish(topic_path, link.encode('utf-8'))
+            publisher.publish(crawl_topic, link.encode('utf-8'))
+    
+    message.ack()
+    time.sleep(2)  # Crawl delay
 
 if __name__ == "__main__":
-    logging.info("Worker node started. Waiting for tasks...")
-    streaming_pull = subscriber.subscribe(subscription_path, callback=callback)
+    logging.info("Worker node started")
+    streaming_pull = subscriber.subscribe(crawl_subscription, callback=callback)
     
     try:
         streaming_pull.result()
     except Exception as e:
-        logging.error(f"Subscription error: {str(e)}")
+        logging.error(f"Worker error: {e}")
         streaming_pull.cancel()
