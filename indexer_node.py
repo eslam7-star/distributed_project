@@ -1,61 +1,77 @@
 import os
 import logging
-import re
 from google.cloud import pubsub_v1
-from whoosh.index import create_in, open_dir, exists_in
+from whoosh.index import create_in, open_dir
 from whoosh.fields import Schema, ID, TEXT
-from whoosh.analysis import StemmingAnalyzer, StandardAnalyzer
 
 logging.basicConfig(level=logging.INFO)
-project_id = "pure-karma-387207"
-subscription_name = "index-sub"
+logger = logging.getLogger(__name__)
+
+PROJECT_ID = "pure-karma-387207"
+SUBSCRIPTION_NAME = "index-sub"
+INDEX_DIR = "index"
 
 schema = Schema(
     url=ID(stored=True),
-    title=TEXT(stored=True, analyzer=StemmingAnalyzer()),
-    content=TEXT(stored=True, analyzer=StandardAnalyzer())
+    title=TEXT(stored=True),
+    content=TEXT(stored=True)
 )
 
-if not os.path.exists("index"):
-    os.makedirs("index")
-if not exists_in("index"):
-    create_in("index", schema)
-ix = open_dir("index")
+def initialize_index():
+    if not os.path.exists(INDEX_DIR):
+        os.makedirs(INDEX_DIR)
+        return create_in(INDEX_DIR, schema)
+    return open_dir(INDEX_DIR)
 
-subscriber = pubsub_v1.SubscriberClient()
-subscription_path = subscriber.subscription_path(project_id, subscription_name)
-
-def preprocess_text(text):
-    text = re.sub(r'<[^>]+>', '', text)
-    text = re.sub(r'\s+', ' ', text)
-    return text.strip()
-
-def index_document(url, title, content):
-    writer = ix.writer()
-    writer.add_document(
-        url=url,
-        title=title,
-        content=preprocess_text(content)
-    )
-    writer.commit()
-    logging.info(f"Indexed: {title[:50]}...")
-
-def callback(message):
+def process_message(message):
     try:
         url = message.attributes.get('url', '')
-        title = message.attributes.get('title', 'No Title')
-        content = message.data.decode('utf-8')
-        index_document(url, title, content)
-        message.ack()
+        title = message.attributes.get('title', 'Untitled')
+        content = message.data.decode('utf-8') if message.data else ''
+        
+        if not url:
+            logger.warning("Received message without URL")
+            return False
+            
+        with ix.writer() as writer:
+            writer.add_document(
+                url=url,
+                title=title[:255], 
+                content=content[:100000]  
+            )
+        
+        logger.info(f"Successfully indexed: {url}")
+        return True
+        
     except Exception as e:
-        logging.error(f"Indexing error: {e}")
-        message.nack()
+        logger.error(f"Failed to process message: {str(e)}")
+        return False
 
-if __name__ == "__main__":
-    logging.info("Indexer service started")
+def main():
+    global ix
+    ix = initialize_index()
+    
+    subscriber = pubsub_v1.SubscriberClient()
+    subscription_path = subscriber.subscription_path(PROJECT_ID, SUBSCRIPTION_NAME)
+    
+    logger.info("Starting indexer service...")
+    
+    def callback(message):
+        if process_message(message):
+            message.ack()
+        else:
+            message.nack()
+    
     streaming_pull = subscriber.subscribe(subscription_path, callback=callback)
+    
     try:
         streaming_pull.result()
-    except Exception as e:
-        logging.error(f"Service stopped: {e}")
+    except KeyboardInterrupt:
+        logger.info("Service stopped by user")
         streaming_pull.cancel()
+    except Exception as e:
+        logger.error(f"Service crashed: {str(e)}")
+        raise
+
+if __name__ == "__main__":
+    main()
