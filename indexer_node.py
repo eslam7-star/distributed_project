@@ -1,28 +1,27 @@
 import os
 import logging
-from whoosh.index import create_in
-from whoosh.fields import *
 from google.cloud import pubsub_v1
+from whoosh.index import create_in, open_dir, exists_in
+from whoosh.fields import Schema, ID, TEXT
 
-# Config
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 project_id = "pure-karma-387207"
-index_subscription = "index-sub"
+subscription_name = "index-sub"
 
-# Whoosh Index
 schema = Schema(
     url=ID(stored=True),
     title=TEXT(stored=True),
-    content=TEXT
+    content=TEXT(stored=True)
 )
 
 if not os.path.exists("index"):
     os.mkdir("index")
-ix = create_in("index", schema)
+if not exists_in("index"):
+    create_in("index", schema)
+ix = open_dir("index")
 
-# PubSub Client
 subscriber = pubsub_v1.SubscriberClient()
-subscription_path = subscriber.subscription_path(project_id, index_subscription)
+subscription_path = subscriber.subscription_path(project_id, subscription_name)
 
 def index_document(url, title, content):
     writer = ix.writer()
@@ -40,8 +39,6 @@ def callback(message):
         if len(data) == 3:
             url, title, content = data
             index_document(url, title, content)
-        else:
-            logging.error("Invalid message format")
         message.ack()
     except Exception as e:
         logging.error(f"Indexing failed: {e}")
@@ -50,7 +47,6 @@ def callback(message):
 if __name__ == "__main__":
     logging.info("Indexer node started")
     streaming_pull = subscriber.subscribe(subscription_path, callback=callback)
-    
     try:
         streaming_pull.result()
     except Exception as e:
