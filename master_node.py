@@ -30,7 +30,7 @@ def distribute_tasks(seed_urls):
 if __name__ == "__main__":
     seed_urls = [
         "https://example.com",
-        "https://example.org",
-        "https://example.net"
+        "https://google.com",
+        "https://wikipedia.org"
     ]
     distribute_tasks(seed_urls)
