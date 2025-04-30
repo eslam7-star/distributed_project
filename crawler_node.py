@@ -1,3 +1,4 @@
+import os
 import time
 import logging
 import requests
@@ -6,15 +7,17 @@ from urllib.robotparser import RobotFileParser
 from google.cloud import pubsub_v1
 
 # Config
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 project_id = "pure-karma-387207"
 topic_crawl = "crawl-tasks"
-topic_index = "index-tasks"
+topic_index = "index-tasks"  
 
 # PubSub Clients
 publisher = pubsub_v1.PublisherClient()
 subscriber = pubsub_v1.SubscriberClient()
 crawl_subscription = subscriber.subscription_path(project_id, "crawl-sub")
+index_topic = publisher.topic_path(project_id, topic_index)  
+
 
 def check_robots(url):
     rp = RobotFileParser()
@@ -22,17 +25,13 @@ def check_robots(url):
         rp.set_url(f"{url}/robots.txt")
         rp.read()
         return rp.can_fetch("*", url)
-    except:
-        return True  # Default allow if robots.txt unreachable
+    except Exception:
+        return True
 
 def extract_links(url, html):
     soup = BeautifulSoup(html, 'html.parser')
-    links = []
-    for link in soup.find_all('a'):
-        href = link.get('href')
-        if href and href.startswith('http'):
-            links.append(href)
-    return links
+    return [a['href'] for a in soup.find_all('a', href=True) 
+            if a['href'].startswith('http')]
 
 def process_page(url):
     try:
@@ -62,22 +61,21 @@ def callback(message):
     title, content, links = process_page(url)
     
     if title and content:
-        # Send to indexer
         index_data = f"{url}|{title}|{content}"
         publisher.publish(index_topic, index_data.encode('utf-8'))
     
     if links:
+        crawl_topic = publisher.topic_path(project_id, topic_crawl)
         for link in links:
             publisher.publish(crawl_topic, link.encode('utf-8'))
     
     message.ack()
-    time.sleep(2)  # Crawl delay
+    time.sleep(2)
 
 if __name__ == "__main__":
     logging.info("Worker node started")
-    streaming_pull = subscriber.subscribe(crawl_subscription, callback=callback)
-    
     try:
+        streaming_pull = subscriber.subscribe(crawl_subscription, callback=callback)
         streaming_pull.result()
     except Exception as e:
         logging.error(f"Worker error: {e}")
