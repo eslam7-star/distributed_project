@@ -1,114 +1,53 @@
-from mpi4py import MPI
-import time
-import logging
-from whoosh.index import create_in, open_dir
-from whoosh.fields import Schema, TEXT, ID
-from whoosh.qparser import QueryParser
 import os
-import shutil
-from bs4 import BeautifulSoup
-import requests
+import logging
+from whoosh.index import create_in
+from whoosh.fields import *
+from google.cloud import pubsub_v1
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - Indexer - %(levelname)s - %(message)s')
+# Config
+logging.basicConfig(level=logging.INFO)
+project_id = "pure-karma-387207"
+subscription_name = "index-tasks"
 
-INDEX_DIR = "indexer_index"
+# Whoosh Index Setup
+schema = Schema(
+    url=ID(stored=True),
+    title=TEXT(stored=True),
+    content=TEXT
+)
+if not os.path.exists("index"):
+    os.mkdir("index")
+ix = create_in("index", schema)
 
-def setup_index():
-    if os.path.exists(INDEX_DIR):
-        shutil.rmtree(INDEX_DIR)  # Clear existing index for fresh start
+# PubSub Client
+subscriber = pubsub_v1.SubscriberClient()
+subscription_path = subscriber.subscription_path(project_id, subscription_name)
 
-    os.mkdir(INDEX_DIR)
-
-    # Schema includes title and content
-    schema = Schema(url=ID(stored=True, unique=True), content=TEXT(stored=True), title=TEXT(stored=True))
-    return create_in(INDEX_DIR, schema)
-
-def extract_title_and_body(url):
-    """
-    Extract title and body (important headings H1, H2) from the HTML content of a page.
-    """
-    try:
-        response = requests.get(url)
-        if response.status_code == 200:
-            soup = BeautifulSoup(response.content, "html.parser")
-
-            # Extract the title of the page
-            title = soup.title.string if soup.title else ""
-
-            # Extract all important headings (H1, H2) as body
-            body = " ".join([h1.get_text() for h1 in soup.find_all("h1")] + [h2.get_text() for h2 in soup.find_all("h2")])
-
-            return title, body
-        else:
-            logging.warning(f"Failed to retrieve URL: {url}")
-            return "", ""
-    except Exception as e:
-        logging.error(f"Error fetching {url}: {e}")
-        return "", ""
-
-def indexer_process():
-    """
-    Process for an indexer node.
-    Receives web page content and indexes it using Whoosh.
-    """
-    comm = MPI.COMM_WORLD
-    rank = comm.Get_rank()
-    size = comm.Get_size()
-    logging.info(f"Indexer node started with rank {rank} of {size}")
-
-    index = setup_index()
-    writer = index.writer()
-
-    while True:
-        status = MPI.Status()
-        content_to_index = comm.recv(source=MPI.ANY_SOURCE, tag=2, status=status)
-        source_rank = status.Get_source()
-
-        if not content_to_index:
-            logging.info(f"Indexer {rank} received shutdown signal. Exiting.")
-            break
-
-        try:
-            url = content_to_index.get("url", "")
-            title, body = extract_title_and_body(url)
-
-            if url and title and body:
-                writer.add_document(url=url, content=body, title=title)
-                logging.info(f"Indexer {rank} indexed: {url}")
-            else:
-                logging.warning(f"Indexer {rank} received incomplete data: {content_to_index}")
-
-            comm.send(f"Indexer {rank} - Indexed content from {url}", dest=0, tag=99)  # Status back to master
-
-        except Exception as e:
-            logging.error(f"Indexer {rank} error indexing content from {source_rank}: {e}")
-            comm.send(f"Indexer {rank} - Error indexing: {e}", dest=0, tag=999)
-
-    # Commit when done
+def index_page(url, title, content):
+    """Index webpage content"""
+    writer = ix.writer()
+    writer.add_document(
+        url=url,
+        title=title,
+        content=content
+    )
     writer.commit()
-    logging.info(f"Indexer {rank} finished and committed index.")
+    logging.info(f"Indexed: {url}")
 
-def search_keywords(query):
-    """
-    Perform a simple keyword search on the index (title and content).
-    """
-    index = open_dir(INDEX_DIR)
-    searcher = index.searcher()
+def callback(message):
+    """Process indexing tasks"""
+    data = message.data.decode('utf-8').split('|')
+    url, title, content = data[0], data[1], data[2]
+    
+    index_page(url, title, content)
+    message.ack()
 
-    query_parser = QueryParser("content", schema=index.schema) 
-    query_obj = query_parser.parse(query)
-
-    results = searcher.search(query_obj)
-
-    for result in results:
-        logging.info(f"Keyword found: '{query}' in URL: {result['url']}")
-        print(f"Found match: {result['url']}")
-        print(f"Title: {result['title']}")
-        print(f"Content: {result['content']}")
-        print()
-
-    searcher.close()
-
-if __name__ == '__main__':
-    indexer_process()
+if __name__ == "__main__":
+    logging.info("Indexer node started. Waiting for tasks...")
+    streaming_pull = subscriber.subscribe(subscription_path, callback=callback)
+    
+    try:
+        streaming_pull.result()
+    except Exception as e:
+        logging.error(f"Subscription error: {str(e)}")
+        streaming_pull.cancel()
