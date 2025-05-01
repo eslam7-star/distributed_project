@@ -15,6 +15,17 @@ services:
       interval: 30s
       timeout: 10s
 
+  master:
+    build: ./master
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      - REDIS_HOST=redis
+      - ES_HOST=elasticsearch      
+
   redis:
     image: redis:6.2-alpine
     configs:

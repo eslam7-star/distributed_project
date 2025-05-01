@@ -4,3 +4,4 @@ whoosh==2.7.4
 argparse==1.4.0
 google-cloud-pubsub
 python-Levenshtein==0.20.9
+redis==4.3.4
