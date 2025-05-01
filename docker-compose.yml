@@ -41,6 +41,8 @@ services:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
+    ports:
+      - "6379:6379"  
 
 configs:
   elasticsearch_config:
