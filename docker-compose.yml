@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  elasticsearch:
+    image: elasticsearch:7.14.0
+    configs:
+      - source: elasticsearch_config
+        target: /usr/share/elasticsearch/config/elasticsearch.yml
+    volumes:
+      - ./volumes/es_data:/usr/share/elasticsearch/data
+    environment:
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9200"]
+      interval: 30s
+      timeout: 10s
+
+  redis:
+    image: redis:6.2-alpine
+    configs:
+      - source: redis_config
+        target: /usr/local/etc/redis/redis.conf
+    command: redis-server /usr/local/etc/redis/redis.conf
+    volumes:
+      - ./volumes/redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+
+configs:
+  elasticsearch_config:
+    file: ./configs/elasticsearch.yml
+  redis_config:
+    file: ./configs/redis.conf
