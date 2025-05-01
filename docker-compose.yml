@@ -34,7 +34,7 @@ services:
     configs:
       - source: redis_config
         target: /usr/local/etc/redis/redis.conf
-    command: redis-server /usr/local/etc/redis/redis.conf
+    command: redis-server --appendonly yes --loadmodule /usr/lib/redis/modules/redisearch.so    
     volumes:
       - ./volumes/redis_data:/data
     healthcheck:
@@ -43,6 +43,34 @@ services:
       timeout: 5s
     ports:
       - "6379:6379"  
+
+
+  crawler:
+    build: ./crawler
+    depends_on:
+      master:
+        condition: service_started
+    volumes:
+      - ./crawler/config:/app/config
+
+  indexer:
+    build: ./indexer
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    volumes:
+      - ./indexer/mappings:/app/mappings
+
+  web:
+    build: ./web
+    ports:
+      - "8080:8080"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+
+
+
 
 configs:
   elasticsearch_config:

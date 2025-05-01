@@ -1,21 +1,20 @@
-import redis
+import os
 import time
 import logging
+from google.cloud import pubsub_v1
 
 logging.basicConfig(level=logging.INFO)
-r = redis.Redis(host='redis', port=6379)
+publisher = pubsub_v1.PublisherClient()
+topic_path = publisher.topic_path("pure-karma-387207", "crawl-tasks")
 
-def main():
-    while True:
-        try:
-            r.set(f"heartbeat:master", str(time.time()))
-            logging.info("Master is running...")
-            time.sleep(10)
-        except Exception as e:
-            logging.error(f"Master error: {e}")
-            time.sleep(5)
+def publish_initial_urls():
+    with open('seeds/initial_urls.txt', 'r') as f:
+        for url in f:
+            url = url.strip()
+            if url:
+                publisher.publish(topic_path, url.encode('utf-8'))
+                logging.info(f"Published: {url}")
+                time.sleep(1)
 
 if __name__ == "__main__":
-    main()
-
-    
+    publish_initial_urls()
