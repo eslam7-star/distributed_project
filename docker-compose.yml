@@ -35,7 +35,7 @@ services:
       - crawler_net
 
   redis:
-    image: redis:6.2-alpine
+    image: redislabs/redisearch:latest
     configs:
       - source: redis_config
         target: /usr/local/etc/redis/redis.conf
