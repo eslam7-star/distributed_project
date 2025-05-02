@@ -2,27 +2,42 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Crawler Dashboard</title>
-    <script>
-        async function fetchStatus() {
-            const response = await fetch('/status');
-            const data = await response.json();
-            document.getElementById("active").innerText = data.active_crawlers?.length || 0;
-            document.getElementById("tasks").innerText = JSON.stringify(data.task_status, null, 2);
-        }
-        setInterval(fetchStatus, 3000);
-        window.onload = fetchStatus;
-    </script>
+    <title>Dashboard</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }
+        h1 { color: #333; }
+        .card { background: white; padding: 15px; margin: 10px 0; border-radius: 8px; box-shadow: 0 0 5px rgba(0,0,0,0.1); }
+        .nodes { margin-top: 20px; }
+        .node { padding: 10px; margin-bottom: 10px; background: #eef; border-left: 5px solid #77f; }
+    </style>
 </head>
 <body>
-    <h1>Crawler Dashboard</h1>
-    <p><strong>Active Crawlers:</strong> <span id="active">0</span></p>
-    <pre><strong>Tasks Status:</strong> <code id="tasks">Loading...</code></pre>
+    <h1>Distributed Crawler Dashboard</h1>
 
-    <h2>Search</h2>
-    <form method="GET" action="/search">
-        <input type="text" name="q" placeholder="Search term..." required />
-        <button type="submit">Search</button>
-    </form>
+    <div class="card">
+        <strong>Crawled URLs:</strong> {{ data.crawled_urls }}
+    </div>
+    <div class="card">
+        <strong>Indexed URLs:</strong> {{ data.indexed_urls }}
+    </div>
+    <div class="card">
+        <strong>Errors:</strong> {{ data.errors }}
+    </div>
+
+    <div class="nodes">
+        <h2>Nodes</h2>
+        {% for node, status in data.nodes.items() %}
+            <div class="node">
+                <strong>{{ node }}</strong>: {{ status }}
+            </div>
+        {% endfor %}
+    </div>
+
+    <div class="card">
+        <form action="/search" method="get">
+            <input type="text" name="q" placeholder="Search content..." required>
+            <button type="submit">Search</button>
+        </form>
+    </div>
 </body>
 </html>

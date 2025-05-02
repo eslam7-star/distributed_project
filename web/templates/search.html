@@ -2,20 +2,29 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Search Results for {{ query }}</title>
+    <title>Search Results</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }
+        h1 { color: #333; }
+        .result { background: white; padding: 15px; margin: 10px 0; border-radius: 8px; box-shadow: 0 0 5px rgba(0,0,0,0.1); }
+        a { text-decoration: none; color: #007BFF; }
+        a:hover { text-decoration: underline; }
+    </style>
 </head>
 <body>
     <h1>Search Results for "{{ query }}"</h1>
-    <ul>
-    {% for hit in hits %}
-        <li>
-            <strong>{{ hit._source.url }}</strong><br />
-            {{ hit._source.content[:200] }}...
-        </li>
+
+    {% if hits %}
+        {% for hit in hits %}
+            <div class="result">
+                <p><strong>URL:</strong> <a href="{{ hit._source.url }}" target="_blank">{{ hit._source.url }}</a></p>
+                <p><strong>Content snippet:</strong> {{ hit._source.content[:300] }}...</p>
+            </div>
+        {% endfor %}
     {% else %}
-        <li>No results found.</li>
-    {% endfor %}
-    </ul>
-    <a href="/">Back to Dashboard</a>
+        <p>No results found.</p>
+    {% endif %}
+
+    <a href="/">← Back to Dashboard</a>
 </body>
 </html>
