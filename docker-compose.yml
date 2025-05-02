@@ -55,8 +55,8 @@ services:
   crawler:
     build: ./crawler
     environment:
-      - REDIS_HOST=masternodee 
-      - MASTER_HOST=	masternodee 
+      - REDIS_HOST=redis 
+      - MASTER_HOST=masternodee 
     volumes:
       - ./crawler/config:/app/config
     networks:
