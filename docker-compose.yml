@@ -17,17 +17,18 @@ services:
       test: ["CMD", "curl", "-f", "http://localhost:9200"]
       interval: 30s
       timeout: 10s
+    networks:
+      - crawler_net  
 
   master:
     build: ./master
     depends_on:
-      elasticsearch:
-        condition: service_healthy
       redis:
         condition: service_healthy
     environment:
       - REDIS_HOST=redis
-      - ES_HOST=elasticsearch      
+    networks:
+      - crawler_net
 
   redis:
     image: redis:6.2-alpine
@@ -43,6 +44,8 @@ services:
       timeout: 5s
     ports:
       - "6379:6379"  
+    networks:
+      - crawler_net  
 
 
   crawler:
@@ -52,6 +55,8 @@ services:
         condition: service_started
     volumes:
       - ./crawler/config:/app/config
+    networks:
+      - crawler_net  
 
   indexer:
     build: ./indexer
@@ -60,6 +65,8 @@ services:
         condition: service_healthy
     volumes:
       - ./indexer/mappings:/app/mappings
+    networks:
+      - crawler_net
 
   web:
     build: ./web
