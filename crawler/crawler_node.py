@@ -66,6 +66,7 @@ def process_task(message):
         url = data["url"]
         print(f"[FETCH] Crawling {url} for task {task_id}")
         links = fetch_and_process_page(url, task_id)
+        time.sleep(10)  
         for link in links:
             add_task(link)
         message.ack()
