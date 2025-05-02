@@ -1,46 +1,105 @@
-import os
 import time
-import logging
-from google.cloud import pubsub_v1
-from bs4 import BeautifulSoup
+import json
+import redis
 import requests
+from bs4 import BeautifulSoup
+from google.cloud import pubsub_v1
+from urllib.parse import urljoin
 
-logging.basicConfig(level=logging.INFO)
+PROJECT_ID = "pure-karma-387207"
+TOPIC_NAME = "crawl-tasks"
+SUBSCRIPTION_NAME = "crawler-subscription"
+INDEX_TOPIC_NAME = "index-data"
+TIMEOUT = 60
+
+publisher = pubsub_v1.PublisherClient()
 subscriber = pubsub_v1.SubscriberClient()
-subscription_path = subscriber.subscription_path("pure-karma-387207", "crawl-sub")
+topic_path = publisher.topic_path(PROJECT_ID, TOPIC_NAME)
+subscription_path = subscriber.subscription_path(PROJECT_ID, SUBSCRIPTION_NAME)
 
-def process_page(url):
+redis_client = redis.Redis(host="redis", port=6379, db=0)
+heartbeat_key = "task_heartbeat"
+status_key = "task_status"
+url_key = "task_urls"
+
+def fetch_and_process_page(url, task_id):
     try:
-        response = requests.get(url, timeout=10)
-        soup = BeautifulSoup(response.text, 'html.parser')
-        return {
-            'url': url,
-            'title': soup.title.string if soup.title else '',
-            'content': soup.get_text()
-        }
+        response = requests.get(url)
+        if response.status_code == 200:
+            html_content = response.text
+            soup = BeautifulSoup(html_content, "html.parser")
+            links = extract_links(soup, url)
+            send_to_indexer(task_id, url, html_content)
+            update_heartbeat(task_id)
+            return links
     except Exception as e:
-        logging.error(f"Failed to crawl {url}: {e}")
-        return None
+        print(f"[ERROR] Failed to fetch {url}: {e}")
+    return []
 
-def callback(message):
+def extract_links(soup, base_url):
+    links = set()
+    for a_tag in soup.find_all("a", href=True):
+        link = a_tag.get("href")
+        full_link = urljoin(base_url, link)
+        links.add(full_link)
+    return list(links)
+
+def send_to_indexer(task_id, url, html_content):
+    message = {
+        "task_id": task_id,
+        "url": url,
+        "html_content": html_content
+    }
+    publisher.publish(topic_path, json.dumps(message).encode("utf-8"))
+
+def update_heartbeat(task_id):
+    redis_client.hset(heartbeat_key, task_id, int(time.time()))
+
+def process_task(message):
     try:
-        url = message.data.decode('utf-8')
-        logging.info(f"Processing: {url}")
-        
-        data = process_page(url)
-        if data:
-            # أرسل للفهرسة
-            publisher = pubsub_v1.PublisherClient()
-            index_topic = publisher.topic_path("your-project-id", "index-tasks")
-            publisher.publish(index_topic, str(data).encode('utf-8'))
-        
+        data = json.loads(message.data.decode("utf-8"))
+        task_id = str(data["task_id"])
+        url = data["url"]
+        print(f"[FETCH] Crawling {url} for task {task_id}")
+        links = fetch_and_process_page(url, task_id)
+        for link in links:
+            add_task(link)
         message.ack()
     except Exception as e:
-        logging.error(f"Message processing failed: {e}")
         message.nack()
 
-if __name__ == "__main__":
-    subscriber.subscribe(subscription_path, callback=callback)
-    logging.info("Crawler started. Waiting for messages...")
+def add_task(url):
+    task_id = str(int(time.time()))  # simple task ID generation
+    publish_task(url, task_id)
+    time.sleep(1)
+
+def publish_task(url, task_id):
+    message = {"task_id": task_id, "url": url}
+    publisher.publish(topic_path, json.dumps(message).encode("utf-8"))
+    redis_client.hset(status_key, task_id, "sent")
+    redis_client.hset(url_key, task_id, url)
+    redis_client.hset(heartbeat_key, task_id, int(time.time()))
+    print(f"[PUBLISH] Task {task_id} with URL {url}")
+
+def listen_for_tasks():
     while True:
-        time.sleep(60)
+        streaming_pull_future = subscriber.subscribe(subscription_path, callback=process_task)
+        streaming_pull_future.result()
+
+def monitor_heartbeat():
+    while True:
+        now = int(time.time())
+        all_heartbeats = redis_client.hgetall(heartbeat_key)
+        for task_id_bytes, last_beat_bytes in all_heartbeats.items():
+            task_id = task_id_bytes.decode("utf-8")
+            last_beat = int(last_beat_bytes.decode("utf-8"))
+            if now - last_beat > TIMEOUT:
+                url = redis_client.hget(url_key, task_id).decode("utf-8")
+                publish_task(url, int(task_id))
+        time.sleep(10)
+
+def main():
+    listen_for_tasks()
+
+if __name__ == "__main__":
+    main()
