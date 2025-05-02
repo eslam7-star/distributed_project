@@ -31,17 +31,14 @@ services:
       - crawler_net
 
 
-  crawler_1:
-    build: .
+  crawler:
+    build: ./crawler
     environment:
-      - CRAWLER_ID=crawler-1
-    restart: always
-
-  crawler_2:
-    build: .
-    environment:
-      - CRAWLER_ID=crawler-2
-    restart: always
+      - MASTER_HOST=10.128.0.6
+    volumes:
+      - ./crawler/config:/app/config
+    networks:
+      - crawler_net  
 
 
   indexer:
