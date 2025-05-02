@@ -31,7 +31,6 @@ url_key = "task_urls"
 
 crawler_last_seen = {}
 
-
 def publish_task(url, task_id):
     message = {"task_id": task_id, "url": url}
     publisher.publish(topic_path, json.dumps(message).encode("utf-8"))
@@ -40,11 +39,16 @@ def publish_task(url, task_id):
     redis_client.hset(heartbeat_key, task_id, int(time.time()))
     print(f"[PUBLISH] Task {task_id} with URL {url}")
 
-
 def listen_for_results():
     def callback(message):
         try:
+            if not message.data:
+                message.ack()
+                return
             data = json.loads(message.data.decode("utf-8"))
+            if not data:
+                message.ack()
+                return
             task_id = str(data.get("task_id"))
             status = data.get("status", "unknown")
             crawler_id = data.get("crawler_id", "unknown")
@@ -55,14 +59,14 @@ def listen_for_results():
             print(f"[ERROR] Failed to process message: {e}")
         message.ack()
 
-    try:
-        subscriber.subscribe(subscription_path, callback=callback)
-        print(f"[SUBSCRIBER] Listening for results on {subscription_path}...")
-        while True:
-            time.sleep(60)
-    except Exception as e:
-        print(f"[ERROR] Subscriber error: {e}")
-
+    while True:
+        try:
+            streaming_pull_future = subscriber.subscribe(subscription_path, callback=callback)
+            print(f"[SUBSCRIBER] Listening for results on {subscription_path}...")
+            streaming_pull_future.result()
+        except Exception as e:
+            print(f"[ERROR] Subscriber error, retrying in 5 seconds: {e}")
+            time.sleep(5)
 
 def monitor_heartbeat():
     while True:
@@ -81,7 +85,6 @@ def monitor_heartbeat():
                     publish_task(url, int(task_id))
         time.sleep(10)
 
-
 def log_stats():
     while True:
         try:
@@ -96,7 +99,6 @@ def log_stats():
             print(f"[ERROR] Monitoring failed: {e}")
         time.sleep(20)
 
-
 def main():
     task_id = 0
     for url in SEED_URLS:
@@ -107,7 +109,6 @@ def main():
     threading.Thread(target=monitor_heartbeat, daemon=True).start()
     threading.Thread(target=log_stats, daemon=True).start()
     listen_for_results()
-
 
 if __name__ == "__main__":
     main()
