@@ -8,11 +8,15 @@ PROJECT_ID = "pure-karma-387207"
 SUBSCRIPTION_ID = "ui-sub"
 
 app = Flask(__name__)
+
 dashboard_data = {
+    "active_crawlers": [],
+    "failed_crawlers": [],
+    "task_status": {},
     "crawled_urls": 0,
     "indexed_urls": 0,
-    "nodes": {},
-    "errors": 0
+    "error_count": 0,
+    "heartbeat_timestamps": {}
 }
 
 subscriber = pubsub_v1.SubscriberClient()
@@ -24,18 +28,18 @@ def listen_to_dashboard():
         global dashboard_data
         try:
             data = json.loads(message.data.decode("utf-8"))
-            # Merge or update dashboard data
-            dashboard_data["crawled_urls"] = data.get("crawled_urls", dashboard_data["crawled_urls"])
-            dashboard_data["indexed_urls"] = data.get("indexed_urls", dashboard_data["indexed_urls"])
-            dashboard_data["nodes"] = data.get("nodes", dashboard_data["nodes"])
-            dashboard_data["errors"] = data.get("errors", dashboard_data["errors"])
-            print("[DASHBOARD] Updated data received")
+
+            for key in dashboard_data:
+                if key in data:
+                    dashboard_data[key] = data[key]
+
+            print("[UI] Dashboard data received:", dashboard_data)
         except Exception as e:
             print(f"[ERROR] Failed to process dashboard message: {e}")
         message.ack()
 
     subscriber.subscribe(subscription_path, callback=callback)
-    print(f"[UI] Listening for dashboard updates on {SUBSCRIPTION_ID}...")
+    print(f"[UI SUBSCRIBER] Listening for dashboard updates on {SUBSCRIPTION_ID}...")
 
 # Start background listener
 threading.Thread(target=listen_to_dashboard, daemon=True).start()

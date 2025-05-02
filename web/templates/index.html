@@ -12,32 +12,36 @@
     </style>
 </head>
 <body>
-    <h1>Distributed Crawler Dashboard</h1>
+    <h1>Dashboard</h1>
 
-    <div class="card">
-        <strong>Crawled URLs:</strong> {{ data.crawled_urls }}
-    </div>
-    <div class="card">
-        <strong>Indexed URLs:</strong> {{ data.indexed_urls }}
-    </div>
-    <div class="card">
-        <strong>Errors:</strong> {{ data.errors }}
-    </div>
-
-    <div class="nodes">
-        <h2>Nodes</h2>
-        {% for node, status in data.nodes.items() %}
-            <div class="node">
-                <strong>{{ node }}</strong>: {{ status }}
-            </div>
+    <h2>Active Crawlers</h2>
+    <ul>
+        {% for node in data.active_crawlers %}
+            <li>{{ node }}</li>
         {% endfor %}
-    </div>
+    </ul>
 
-    <div class="card">
-        <form action="/search" method="get">
-            <input type="text" name="q" placeholder="Search content..." required>
-            <button type="submit">Search</button>
-        </form>
-    </div>
+    <h2>Failed Crawlers</h2>
+    <ul>
+        {% for node in data.failed_crawlers %}
+            <li>{{ node }}</li>
+        {% endfor %}
+    </ul>
+
+    <h2>Crawled URLs</h2>
+    <p>{{ data.crawled_urls }}</p>
+
+    <h2>Indexed URLs</h2>
+    <p>{{ data.indexed_urls }}</p>
+
+    <h2>Error Count</h2>
+    <p>{{ data.error_count }}</p>
+
+    <h2>Task Statuses</h2>
+    <ul>
+        {% for task_id, status in data.task_status.items() %}
+            <li>Task {{ task_id }}: {{ status }}</li>
+        {% endfor %}
+    </ul>
 </body>
 </html>
