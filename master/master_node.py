@@ -1,6 +1,8 @@
 import time
 import json
 from google.cloud import pubsub_v1
+import threading
+
 
 PROJECT_ID = "pure-karma-387207"
 TASK_TOPIC_NAME = "crawl-tasks"
