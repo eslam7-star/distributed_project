@@ -2,6 +2,7 @@ import time
 import json
 from google.cloud import pubsub_v1
 from flask import Flask, render_template, jsonify
+import threading
 
 PROJECT_ID = "pure-karma-387207"
 DASHBOARD_TOPIC_NAME = "crawler-dashboard"
