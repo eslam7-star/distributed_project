@@ -1,15 +1,12 @@
 import time
 import json
-import threading
 from google.cloud import pubsub_v1
 
 PROJECT_ID = "pure-karma-387207"
 TASK_TOPIC_NAME = "crawl-tasks"
-HEARTBEAT_TOPIC_NAME = "crawler-heartbeats"
 RESULT_TOPIC_NAME = "crawl-results"
 DASHBOARD_TOPIC_NAME = "crawler-dashboard"
-SUBSCRIPTION_NAME = "index-sub"
-UI_SUBSCRIPTION_NAME = "ui-sub"
+SUBSCRIPTION_NAME = "crawler-sub"
 
 SEED_URLS = [
     "https://example.com",
@@ -21,11 +18,9 @@ TIMEOUT = 60
 publisher = pubsub_v1.PublisherClient()
 subscriber = pubsub_v1.SubscriberClient()
 task_topic_path = publisher.topic_path(PROJECT_ID, TASK_TOPIC_NAME)
-heartbeat_topic_path = publisher.topic_path(PROJECT_ID, HEARTBEAT_TOPIC_NAME)
 result_topic_path = publisher.topic_path(PROJECT_ID, RESULT_TOPIC_NAME)
 dashboard_topic_path = publisher.topic_path(PROJECT_ID, DASHBOARD_TOPIC_NAME)
 subscription_path = subscriber.subscription_path(PROJECT_ID, SUBSCRIPTION_NAME)
-ui_subscription_path = subscriber.subscription_path(PROJECT_ID, UI_SUBSCRIPTION_NAME)
 
 crawler_last_seen = {}
 crawler_task_status = {}
@@ -57,15 +52,11 @@ def publish_to_dashboard():
 def listen_for_results():
     def callback(message):
         try:
-            if not message.data:
-                message.ack()
-                return
             data = json.loads(message.data.decode("utf-8"))
             task_id = str(data.get("task_id"))
             status = data.get("status", "unknown")
             crawler_id = data.get("crawler_id", "unknown")
             url = data.get("url", f"task-{task_id}")
-
             crawler_task_status[url] = status
             crawler_last_seen[crawler_id] = int(time.time())
             print(f"[RESULT] Task {task_id} - Status: {status} from {crawler_id}")
@@ -93,6 +84,7 @@ def main():
         time.sleep(1)
 
     threading.Thread(target=dashboard_loop, daemon=True).start()
+
     listen_for_results()
 
 if __name__ == "__main__":
