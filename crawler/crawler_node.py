@@ -8,8 +8,8 @@ from urllib.parse import urljoin
 
 PROJECT_ID = "pure-karma-387207"
 TOPIC_NAME = "crawl-tasks"
-SUBSCRIPTION_NAME = "crawler-subscription"
-INDEX_TOPIC_NAME = "index-data"
+SUBSCRIPTION_NAME = "crawl-sub"
+INDEX_TOPIC_NAME = "index-tasks"
 TIMEOUT = 60
 
 publisher = pubsub_v1.PublisherClient()
