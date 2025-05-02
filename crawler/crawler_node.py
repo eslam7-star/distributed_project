@@ -5,6 +5,7 @@ import requests
 from bs4 import BeautifulSoup
 from google.cloud import pubsub_v1
 from urllib.parse import urljoin
+import os
 
 PROJECT_ID = "pure-karma-387207"
 TOPIC_NAME = "crawl-tasks"
@@ -17,7 +18,8 @@ subscriber = pubsub_v1.SubscriberClient()
 topic_path = publisher.topic_path(PROJECT_ID, TOPIC_NAME)
 subscription_path = subscriber.subscription_path(PROJECT_ID, SUBSCRIPTION_NAME)
 
-redis_client = redis.Redis(host="redis", port=6379, db=0)
+redis_host = os.getenv("REDIS_HOST", "localhost")
+redis_client = redis.Redis(host=redis_host, port=6379, db=0)
 heartbeat_key = "task_heartbeat"
 status_key = "task_status"
 url_key = "task_urls"
