@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Search Results for {{ query }}</title>
+</head>
+<body>
+    <h1>Search Results for "{{ query }}"</h1>
+    <ul>
+    {% for hit in hits %}
+        <li>
+            <strong>{{ hit._source.url }}</strong><br />
+            {{ hit._source.content[:200] }}...
+        </li>
+    {% else %}
+        <li>No results found.</li>
+    {% endfor %}
+    </ul>
+    <a href="/">Back to Dashboard</a>
+</body>
+</html>

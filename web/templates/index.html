@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Crawler Dashboard</title>
+    <script>
+        async function fetchStatus() {
+            const response = await fetch('/status');
+            const data = await response.json();
+            document.getElementById("active").innerText = data.active_crawlers?.length || 0;
+            document.getElementById("tasks").innerText = JSON.stringify(data.task_status, null, 2);
+        }
+        setInterval(fetchStatus, 3000);
+        window.onload = fetchStatus;
+    </script>
+</head>
+<body>
+    <h1>Crawler Dashboard</h1>
+    <p><strong>Active Crawlers:</strong> <span id="active">0</span></p>
+    <pre><strong>Tasks Status:</strong> <code id="tasks">Loading...</code></pre>
+
+    <h2>Search</h2>
+    <form method="GET" action="/search">
+        <input type="text" name="q" placeholder="Search term..." required />
+        <button type="submit">Search</button>
+    </form>
+</body>
+</html>

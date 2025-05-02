@@ -24,6 +24,7 @@ services:
     networks:
       - crawler_net  
 
+
   master:
     build: ./master
     depends_on:
@@ -34,33 +35,16 @@ services:
     networks:
       - crawler_net
 
-  redis:
-    image: redislabs/redisearch:latest
-    configs:
-      - source: redis_config
-        target: /usr/local/etc/redis/redis.conf
-    command: redis-server --appendonly yes --loadmodule /usr/lib/redis/modules/redisearch.so    
-    volumes:
-      - ./volumes/redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-    ports:
-      - "6379:6379"  
-    networks:
-      - crawler_net  
-
 
   crawler:
     build: ./crawler
     environment:
-      - REDIS_HOST=10.128.0.6 
       - MASTER_HOST=10.128.0.6
     volumes:
       - ./crawler/config:/app/config
     networks:
       - crawler_net  
+
 
   indexer:
     build: ./indexer
@@ -71,15 +55,6 @@ services:
       - ./indexer/mappings:/app/mappings
     networks:
       - crawler_net
-
-  web:
-    build: ./web
-    ports:
-      - "8080:8080"
-    depends_on:
-      elasticsearch:
-        condition: service_healthy
-
 
 
 
