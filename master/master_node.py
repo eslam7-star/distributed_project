@@ -14,7 +14,6 @@ DASHBOARD_TOPIC_NAME = "crawler-dashboard"
 SUBSCRIPTION_NAME = "index-sub"
 UI_SUBSCRIPTION_NAME = "ui-sub"
 
-
 SEED_URLS = [
     "https://example.com",
     "https://google.com",
@@ -33,6 +32,7 @@ ui_subscription_path = subscriber.subscription_path(PROJECT_ID, UI_SUBSCRIPTION_
 
 crawler_last_seen = {}
 crawler_task_status = {}
+crawler_errors = {}
 
 def publish_task(url, task_id):
     message = {"task_id": task_id, "url": url}
@@ -45,12 +45,23 @@ def publish_heartbeat(task_id):
     print(f"[HEARTBEAT] Sent heartbeat for Task {task_id}")
 
 def publish_to_dashboard():
+    now = int(time.time())
+    active_crawlers = [cid for cid, ts in crawler_last_seen.items() if now - ts <= TIMEOUT]
+    failed_crawlers = [cid for cid, ts in crawler_last_seen.items() if now - ts > TIMEOUT]
     status_data = {
-        "active_crawlers": list(crawler_last_seen.keys()),
-        "task_status": crawler_task_status
+        "active_crawlers": active_crawlers,
+        "failed_crawlers": failed_crawlers,
+        "task_status": crawler_task_status,
+        "crawled_urls": len([s for s in crawler_task_status.values() if s == "crawled"]),
+        "indexed_urls": len([s for s in crawler_task_status.values() if s == "indexed"]),
+        "error_count": len([s for s in crawler_task_status.values() if s == "error"]),
+        "heartbeat_timestamps": crawler_last_seen
     }
-    publisher.publish(dashboard_topic_path, json.dumps(status_data).encode("utf-8"))
-    print("[DASHBOARD] Published status data to dashboard")
+    try:
+        publisher.publish(dashboard_topic_path, json.dumps(status_data).encode("utf-8"))
+        print("[DASHBOARD] Published status to UI")
+    except Exception as e:
+        print(f"[ERROR] Failed to publish to dashboard: {e}")
 
 def listen_for_results():
     def callback(message):
@@ -91,7 +102,6 @@ def listen_for_ui_updates():
             if not data:
                 message.ack()
                 return
-            # Here you can process the data and forward it to your UI frontend
             print(f"[UI] Dashboard data received: {data}")
         except Exception as e:
             print(f"[ERROR] Failed to process UI message: {e}")
@@ -123,6 +133,11 @@ def log_stats():
             print(f"[ERROR] Monitoring failed: {e}")
         time.sleep(20)
 
+def dashboard_loop():
+    while True:
+        publish_to_dashboard()
+        time.sleep(10)
+
 def main():
     task_id = 0
     for url in SEED_URLS:
@@ -133,6 +148,7 @@ def main():
     threading.Thread(target=monitor_heartbeat, daemon=True).start()
     threading.Thread(target=log_stats, daemon=True).start()
     threading.Thread(target=listen_for_ui_updates, daemon=True).start()
+    threading.Thread(target=dashboard_loop, daemon=True).start()
     listen_for_results()
 
 if __name__ == "__main__":
