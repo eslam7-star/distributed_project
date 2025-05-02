@@ -6,7 +6,7 @@ COPY . /app
 
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY secrets/gcp-credentials.json ../secrets/gcp-credentials.json
+COPY ../secrets/gcp-credentials.json secrets/gcp-credentials.json
 ENV GOOGLE_APPLICATION_CREDENTIALS="/secrets/gcp-credentials.json"
 
 
