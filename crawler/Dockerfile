@@ -10,4 +10,4 @@ COPY secrets/gcp-credentials.json gcp-credentials.json
 ENV GOOGLE_APPLICATION_CREDENTIALS="gcp-credentials.json"
 
 
-CMD ["python3", "master_node.py"]
+CMD ["python3", "crawler_node.py"]
