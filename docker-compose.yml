@@ -1,4 +1,8 @@
 
+networks:
+  crawler_net:
+    driver: bridge
+
 services:
   elasticsearch:
     image: elasticsearch:8.7.0
