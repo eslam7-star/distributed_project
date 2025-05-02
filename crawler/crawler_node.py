@@ -32,18 +32,19 @@ TIMEOUT = 60
 def fetch_and_process_page(url, task_id):
     try:
         response = requests.get(url, timeout=10)
+        time.sleep(2)  
         if response.status_code == 200:
             html_content = response.text
             soup = BeautifulSoup(html_content, "html.parser")
             links = extract_links(soup, url)
             send_to_indexer(task_id, url, html_content)
-            send_result(task_id, "crawled")
+            send_result(task_id, "crawled", crawled_url=url)
             return links
         else:
-            send_result(task_id, "error")
+            send_result(task_id, "error", crawled_url=url)
     except Exception as e:
         print(f"[ERROR] Failed to fetch {url}: {e}")
-        send_result(task_id, "error")
+        send_result(task_id, "error", crawled_url=url)
     return []
 
 def extract_links(soup, base_url):
@@ -63,12 +64,14 @@ def send_to_indexer(task_id, url, html_content):
     publisher.publish(index_topic_path, json.dumps(message).encode("utf-8"))
     #redis_client.hset(status_key, task_id, "indexed")
 
-def send_result(task_id, status):
+def send_result(task_id, status, crawled_url=None):
     result_msg = {
         "task_id": task_id,
         "status": status,
         "crawler_id": CRAWLER_ID
     }
+    if crawled_url:
+        result_msg["url"] = crawled_url
     publisher.publish(result_topic_path, json.dumps(result_msg).encode("utf-8"))
     update_heartbeat(task_id)
 
